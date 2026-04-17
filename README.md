@@ -1,18 +1,24 @@
 # CareFlow E-Health
 
-CareFlow is a model-driven e-health demo application generated from the MDE artifacts in [docs/mde](./docs/mde). The app demonstrates how class, state, sequence, and ER models can be transformed into a working care coordination system.
+CareFlow is a model-driven patient e-health demo application generated from the MDE artifacts in [docs/mde](./docs/mde). The app demonstrates how class, state, sequence, and ER models can be transformed into a working patient portal.
 
 ## Features
 
-- Patient roster and care goals
-- Appointment booking with state-machine transitions
-- Encounter workflow with sign-off states
-- Prescription creation
-- Lab orders and critical-result alerts
+- Family profile switching and care goals
+- Appointment booking, check-in, and video-visit actions
+- Medication tracking and refill requests
+- Test result review and follow-up status
 - Remote vital recording with alert generation
 - Secure message triage with urgent escalation
+- Care plan tasks, billing, care access, and record sharing surfaces
 - Audit event capture
 - Supabase persistence with browser-storage fallback
+
+## UI Stack
+
+- Tailwind CSS for layout, tokens, and responsive styling
+- shadcn-style local components for cards, buttons, badges, inputs, labels, progress, and separators
+- Lucide icons for patient portal actions
 
 ## Local Development
 
