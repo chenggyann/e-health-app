@@ -1,6 +1,6 @@
 # CareFlow E-Health
 
-CareFlow is a model-driven patient e-health demo application generated from the MDE artifacts in [docs/mde](./docs/mde). The app demonstrates how class, state, sequence, and ER models can be transformed into a working patient portal.
+CareFlow is a model-driven patient e-health Flutter app generated from the MDE artifacts in [docs/mde](./docs/mde). It uses the class, state, sequence, and ER models as the source for a patient portal experience.
 
 ## Features
 
@@ -11,37 +11,38 @@ CareFlow is a model-driven patient e-health demo application generated from the 
 - Remote vital recording with alert generation
 - Secure message triage with urgent escalation
 - Care plan tasks, billing, care access, and record sharing surfaces
-- Audit event capture
-- Supabase persistence with browser-storage fallback
+- Supabase persistence with shared_preferences fallback
 
-## UI Stack
+## App Stack
 
-- Tailwind CSS for layout, tokens, and responsive styling
-- shadcn-style local components for cards, buttons, badges, inputs, labels, progress, and separators
-- Lucide icons for patient portal actions
+- Flutter 3.41 / Dart 3.11
+- Supabase Flutter client
+- shared_preferences offline fallback
+- Material 3 responsive UI
+- Vercel static hosting of the Flutter web release bundle
 
 ## Local Development
 
-```bash
-npm install
-npm run dev
-```
-
-The app uses these public Supabase values by default:
-
-- URL: `https://ktbpsliejglodmonmzhs.supabase.co`
-- Anon key: configured in `src/lib/supabase.js`
-
-You can override them with:
+Install Flutter, then run:
 
 ```bash
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_ANON_KEY=...
+cd flutter_app
+flutter pub get
+flutter run -d chrome
 ```
+
+Build for web:
+
+```bash
+cd flutter_app
+flutter build web --release
+```
+
+This workspace was verified with a local Flutter SDK at `.tooling/flutter`, but that SDK is intentionally not committed.
 
 ## Supabase Setup
 
-Run [supabase/schema.sql](./supabase/schema.sql) in the Supabase SQL editor for the project before expecting persistent storage. Until the schema exists, the app automatically uses browser storage so the deployed demo remains usable.
+Run [supabase/schema.sql](./supabase/schema.sql) in the Supabase SQL editor for project `ktbpsliejglodmonmzhs` before expecting persistent storage. Until the schema exists, the app automatically uses local browser storage so the deployed demo remains usable.
 
 The included policies allow anonymous demo access. For a real healthcare deployment, replace them with authenticated row-level security policies and do not expose clinical records publicly.
 
@@ -49,16 +50,21 @@ The included policies allow anonymous demo access. For a real healthcare deploym
 
 | Model artifact | App implementation |
 | --- | --- |
-| Class diagram | React state shape, Supabase tables, form boundaries |
-| State diagrams | Appointment, encounter, alert, message workflow buttons |
-| Sequence diagrams | Booking, consultation, prescribing, vitals, messaging flows |
+| Class diagram | Flutter data model maps and Supabase tables |
+| State diagrams | Appointment state transitions and alert/message workflows |
+| Sequence diagrams | Booking, medication refill, vitals-to-alerts, secure messaging |
 | ER diagram | `supabase/schema.sql` |
-| Invariants | Time-window checks, vital alert rules, status transitions |
+| Invariants | Valid appointment actions, vital alert thresholds, urgent message triage |
 
 ## Deployment
 
-The project is configured for Vercel as a Vite static app. Build output is written to `dist`.
+Vercel serves the committed Flutter web release bundle from `flutter_app/build/web`.
+
+When changing Flutter code:
 
 ```bash
-npm run build
+cd flutter_app
+flutter build web --release
 ```
+
+Then commit both the Flutter source and updated `flutter_app/build/web` output.
