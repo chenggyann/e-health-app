@@ -1,0 +1,10 @@
+.tooling/
+node_modules/
+dist/
+dev-server.log
+dev-server.err.log
+flutter_app/.dart_tool/
+flutter_app/.idea/
+flutter_app/build/*
+!flutter_app/build/web/
+!flutter_app/build/web/**
