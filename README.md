@@ -1,16 +1,17 @@
-# CareFlow E-Health
+# HealthPath
 
-CareFlow is a model-driven patient e-health Flutter app generated from the MDE artifacts in [docs/mde](./docs/mde). It uses the class, state, sequence, and ER models as the source for a patient portal experience.
+HealthPath is a model-driven patient e-health Flutter app generated from the MDE artifacts in [docs/mde](./docs/mde). It uses the class, state, sequence, and ER models as the source for a patient portal that runs from one Flutter codebase across web, Android, and iOS.
 
 ## Features
 
+- Mobile-first home screen with daily task progress
 - Family profile switching and care goals
-- Appointment booking, check-in, and video-visit actions
+- Appointment booking, check-in, reschedule, and video-visit actions
 - Medication tracking and refill requests
 - Test result review and follow-up status
 - Remote vital recording with alert generation
 - Secure message triage with urgent escalation
-- Care plan tasks, billing, care access, and record sharing surfaces
+- Care plan tasks and MDE traceability surfaces
 - Supabase persistence with shared_preferences fallback
 
 ## App Stack
@@ -18,7 +19,7 @@ CareFlow is a model-driven patient e-health Flutter app generated from the MDE a
 - Flutter 3.41 / Dart 3.11
 - Supabase Flutter client
 - shared_preferences offline fallback
-- Material 3 responsive UI
+- Material 3 mobile-first responsive UI
 - Vercel static hosting of the Flutter web release bundle
 
 ## Local Development
@@ -30,6 +31,16 @@ cd flutter_app
 flutter pub get
 flutter run -d chrome
 ```
+
+Run in mobile format:
+
+```bash
+cd flutter_app
+flutter run -d android
+flutter run -d ios
+```
+
+Android requires Android Studio/Android SDK. iOS builds require macOS with Xcode.
 
 Build for web:
 

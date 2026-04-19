@@ -1,11 +1,11 @@
 {
-    "name": "CareFlow E-Health",
-    "short_name": "CareFlow",
+    "name": "HealthPath",
+    "short_name": "HealthPath",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#f6fbf8",
-    "theme_color": "#087761",
-    "description": "CareFlow patient e-health portal.",
+    "background_color": "#0b0f0e",
+    "theme_color": "#5cc8ad",
+    "description": "HealthPath patient e-health app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

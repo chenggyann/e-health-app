@@ -1,17 +1,17 @@
-# flutter_app
+# HealthPath Flutter App
 
-A new Flutter project.
+Mobile-first Flutter implementation of the HealthPath patient e-health app.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+Install Flutter, then run one of:
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter run -d chrome
+flutter run -d android
+flutter run -d ios
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Android requires Android Studio/Android SDK. iOS builds require macOS with Xcode.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The Vercel deployment serves the committed `build/web` release bundle.

@@ -10,40 +10,78 @@ const supabaseUrl = 'https://ktbpsliejglodmonmzhs.supabase.co';
 const supabaseAnonKey =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0YnBzbGllamdsb2Rtb25temhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NDA2MTYsImV4cCI6MjA5MjAxNjYxNn0.WMwO-DFKZeMDb8MTy7qjBs6zdX_bP6vdC0ffF5V0KLg';
 
+const _ink = Color(0xff0b0f0e);
+const _surface = Color(0xff121816);
+const _surfaceHigh = Color(0xff18211f);
+const _line = Color(0xff293431);
+const _muted = Color(0xff93a09b);
+const _text = Color(0xffecf3ef);
+const _mint = Color(0xff5cc8ad);
+const _blue = Color(0xff68a0ff);
+const _amber = Color(0xffffbd59);
+const _rose = Color(0xffff6f7d);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-  runApp(const CareFlowApp());
+  runApp(const HealthPathApp());
 }
 
-class CareFlowApp extends StatelessWidget {
-  const CareFlowApp({super.key});
+class HealthPathApp extends StatelessWidget {
+  const HealthPathApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xff087761),
-      brightness: Brightness.light,
-    );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: _mint,
+          brightness: Brightness.dark,
+        ).copyWith(
+          primary: _mint,
+          secondary: _blue,
+          tertiary: _amber,
+          surface: _surface,
+          onSurface: _text,
+        );
 
     return MaterialApp(
-      title: 'CareFlow E-Health',
+      title: 'HealthPath',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        brightness: Brightness.dark,
         colorScheme: scheme,
-        scaffoldBackgroundColor: const Color(0xfff6fbf8),
+        scaffoldBackgroundColor: _ink,
+        fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _ink,
+          foregroundColor: _text,
+          centerTitle: true,
+          elevation: 0,
+        ),
         cardTheme: const CardThemeData(
+          color: _surface,
           elevation: 0,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(8)),
-            side: BorderSide(color: Color(0xffd5e4dc)),
+            side: BorderSide(color: _line),
           ),
         ),
         inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: _surfaceHigh,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(8)),
+            borderSide: BorderSide(color: _line),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+            borderSide: BorderSide(color: _line),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+            borderSide: BorderSide(color: _mint, width: 1.4),
           ),
         ),
       ),
@@ -69,8 +107,9 @@ class _PatientHomePageState extends State<PatientHomePage> {
   String? _selectedPatientId;
   String _backendMode = 'loading';
   String _backendMessage = 'Connecting to care records...';
-  String _appointmentDate = '';
   String _vitalType = 'Blood pressure systolic';
+  int _tab = 0;
+  Set<String> _completedTasks = {};
 
   @override
   void initState() {
@@ -88,21 +127,42 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
   Future<void> _load() async {
     final result = await _store.load();
+    final selected = result.data.patients.firstOrNull?['id'] as String?;
+    final completed = await _loadTasks(selected);
     if (!mounted) return;
 
     setState(() {
       _data = result.data;
       _backendMode = result.mode;
       _backendMessage = result.message;
-      _selectedPatientId = _data.patients.firstOrNull?['id'] as String?;
+      _selectedPatientId = selected;
+      _completedTasks = completed;
     });
   }
 
-  Map<String, dynamic>? get patient =>
-      _data.patients.cast<Map<String, dynamic>?>().firstWhere(
-        (item) => item?['id'] == _selectedPatientId,
-        orElse: () => null,
-      );
+  Future<Set<String>> _loadTasks(String? patientId) async {
+    if (patientId == null) return {};
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('healthpath.tasks.$patientId');
+    if (raw == null) return {};
+    return (jsonDecode(raw) as List).cast<String>().toSet();
+  }
+
+  Future<void> _saveTasks() async {
+    if (_selectedPatientId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'healthpath.tasks.$_selectedPatientId',
+      jsonEncode(_completedTasks.toList()),
+    );
+  }
+
+  Map<String, dynamic>? get patient {
+    return _data.patients.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['id'] == _selectedPatientId,
+      orElse: () => null,
+    );
+  }
 
   List<Map<String, dynamic>> _forPatient(List<Map<String, dynamic>> records) {
     return records
@@ -110,27 +170,28 @@ class _PatientHomePageState extends State<PatientHomePage> {
         .toList();
   }
 
-  Future<void> _saveOfflineIfNeeded() async {
-    if (_backendMode == 'offline') {
-      await _store.saveOffline(_data);
-    }
-  }
+  List<Map<String, dynamic>> get _appointments =>
+      _forPatient(_data.appointments);
+  List<Map<String, dynamic>> get _prescriptions =>
+      _forPatient(_data.prescriptions);
+  List<Map<String, dynamic>> get _labs => _forPatient(_data.labOrders);
+  List<Map<String, dynamic>> get _vitals => _forPatient(_data.vitals);
+  List<Map<String, dynamic>> get _alerts => _forPatient(_data.alerts);
+  List<Map<String, dynamic>> get _messages => _forPatient(_data.messages);
 
   Future<void> _insert(String key, Map<String, dynamic> record) async {
     setState(() => _data = _data.inserted(key, record));
-
-    if (_backendMode == 'supabase') {
-      try {
-        await _store.insert(key, record);
-      } catch (error) {
-        setState(() {
-          _backendMode = 'offline';
-          _backendMessage = '$error. Switched to browser storage.';
-        });
-      }
+    try {
+      if (_backendMode == 'supabase') await _store.insert(key, record);
+    } catch (error) {
+      _showSnack('Saved locally. Supabase write failed: $error');
+      setState(() {
+        _backendMode = 'offline';
+        _backendMessage =
+            'Using browser storage after a Supabase write failed.';
+      });
     }
-
-    await _saveOfflineIfNeeded();
+    await _store.saveOffline(_data);
   }
 
   Future<void> _update(
@@ -139,633 +200,1040 @@ class _PatientHomePageState extends State<PatientHomePage> {
     Map<String, dynamic> patch,
   ) async {
     setState(() => _data = _data.updated(key, id, patch));
-
-    if (_backendMode == 'supabase') {
-      try {
-        await _store.update(key, id, patch);
-      } catch (error) {
-        setState(() {
-          _backendMode = 'offline';
-          _backendMessage = '$error. Switched to browser storage.';
-        });
-      }
+    try {
+      if (_backendMode == 'supabase') await _store.update(key, id, patch);
+    } catch (error) {
+      _showSnack('Updated locally. Supabase update failed: $error');
+      setState(() {
+        _backendMode = 'offline';
+        _backendMessage =
+            'Using browser storage after a Supabase update failed.';
+      });
     }
-
-    await _saveOfflineIfNeeded();
+    await _store.saveOffline(_data);
   }
 
-  Future<void> _seedDemo() async {
-    final seeded = AppData.seeded();
-    setState(() {
-      _data = seeded;
-      _selectedPatientId = seeded.patients.first['id'] as String;
-    });
-
-    if (_backendMode == 'supabase') {
-      try {
-        await _store.seedSupabase(seeded);
-        setState(() => _backendMessage = 'Demo patient records seeded.');
-      } catch (error) {
-        await _store.saveOffline(seeded);
-        setState(() {
-          _backendMode = 'offline';
-          _backendMessage =
-              '$error. Demo records are available in browser storage.';
-        });
-      }
-    } else {
+  Future<void> _seedSupabase() async {
+    try {
+      final seeded = AppData.seeded();
+      await _store.seedSupabase(seeded);
       await _store.saveOffline(seeded);
-      setState(() => _backendMessage = 'Demo patient records reset locally.');
+      final completed = await _loadTasks(seeded.patients.first['id'] as String);
+      setState(() {
+        _data = seeded;
+        _selectedPatientId = seeded.patients.first['id'] as String;
+        _backendMode = 'supabase';
+        _backendMessage = 'Demo records seeded in Supabase.';
+        _completedTasks = completed;
+      });
+      _showSnack('Demo data seeded.');
+    } catch (error) {
+      _showSnack('Supabase seed failed: $error');
     }
   }
 
-  Future<void> _bookAppointment() async {
-    final currentPatient = patient;
-    if (currentPatient == null || _appointmentReason.text.trim().isEmpty) {
+  Future<void> _switchPatient(String id) async {
+    final completed = await _loadTasks(id);
+    setState(() {
+      _selectedPatientId = id;
+      _completedTasks = completed;
+      _tab = 0;
+    });
+  }
+
+  Future<void> _requestAppointment() async {
+    final selected = patient;
+    if (selected == null) return;
+    final reason = _appointmentReason.text.trim();
+    if (reason.isEmpty) {
+      _showSnack('Add a reason for the appointment.');
       return;
     }
 
-    final selectedDate = _appointmentDate.isEmpty
-        ? DateTime.now().add(const Duration(days: 2))
-        : DateTime.parse(_appointmentDate);
-    final record = {
+    final clinician = _data.clinicians.firstOrNull;
+    final start = DateTime.now().add(const Duration(days: 3, hours: 2));
+    await _insert('appointments', {
       'id': newId(),
-      'patient_id': currentPatient['id'],
-      'clinician_id': _data.clinicians.firstOrNull?['id'],
-      'scheduled_start': selectedDate.toIso8601String(),
-      'scheduled_end': selectedDate
-          .add(const Duration(minutes: 30))
-          .toIso8601String(),
+      'patient_id': selected['id'],
+      'clinician_id': clinician?['id'],
+      'scheduled_start': start.toIso8601String(),
+      'scheduled_end': start.add(const Duration(minutes: 30)).toIso8601String(),
       'type': 'Video visit',
       'status': 'Requested',
-      'reason': _appointmentReason.text.trim(),
-      'created_at': DateTime.now().toIso8601String(),
-    };
-
-    await _insert('appointments', record);
+      'reason': reason,
+      'created_at': nowIso(),
+    });
     _appointmentReason.clear();
-    setState(() => _appointmentDate = '');
+    _showSnack('Appointment request sent.');
   }
 
-  Future<void> _moveAppointment(
+  Future<void> _transitionAppointment(
     Map<String, dynamic> appointment,
     String action,
   ) async {
-    final next = transitionAppointment(
-      appointment['status'] as String? ?? '',
-      action,
-    );
+    final next = transitionAppointment(appointment['status'] as String, action);
     await _update('appointments', appointment['id'] as String, {
       'status': next,
     });
   }
 
-  Future<void> _recordVital() async {
-    final currentPatient = patient;
-    if (currentPatient == null || _vitalValue.text.trim().isEmpty) return;
-
-    final value = double.tryParse(_vitalValue.text.trim());
-    if (value == null) return;
-
-    final vital = {
+  Future<void> _requestRefill(Map<String, dynamic> prescription) async {
+    final selected = patient;
+    if (selected == null) return;
+    await _insert('prescriptions', {
       'id': newId(),
-      'patient_id': currentPatient['id'],
+      'encounter_id': prescription['encounter_id'],
+      'patient_id': selected['id'],
+      'clinician_id': prescription['clinician_id'],
+      'status': 'RefillRequested',
+      'medication_name': prescription['medication_name'],
+      'dose': prescription['dose'],
+      'route': prescription['route'] ?? 'Oral',
+      'frequency': prescription['frequency'],
+      'repeats': 0,
+      'issued_at': nowIso(),
+      'expires_at': DateTime.now()
+          .add(const Duration(days: 90))
+          .toIso8601String(),
+      'created_at': nowIso(),
+    });
+    _showSnack('Refill request sent to the care team.');
+  }
+
+  Future<void> _sendMessage() async {
+    final selected = patient;
+    final body = _messageBody.text.trim();
+    if (selected == null) return;
+    if (body.length < 8) {
+      _showSnack('Write a little more detail for your care team.');
+      return;
+    }
+
+    final triage = triageMessage(body);
+    await _insert('messages', {
+      'id': newId(),
+      'patient_id': selected['id'],
+      'subject': triage.urgent
+          ? 'Urgent symptom question'
+          : 'Care team question',
+      'status': triage.urgent ? 'UrgentReview' : 'AwaitingCareTeam',
+      'latest_message': body,
+      'priority': triage.urgent ? 'Urgent' : 'Routine',
+      'created_at': nowIso(),
+    });
+    _messageBody.clear();
+    _showSnack(triage.urgent ? 'Marked urgent for review.' : 'Message sent.');
+  }
+
+  Future<void> _logVital() async {
+    final selected = patient;
+    final value = num.tryParse(_vitalValue.text.trim());
+    if (selected == null) return;
+    if (value == null) {
+      _showSnack('Enter a valid reading.');
+      return;
+    }
+
+    final vitalId = newId();
+    await _insert('vitals', {
+      'id': vitalId,
+      'patient_id': selected['id'],
       'type': _vitalType,
       'value': value,
       'unit': unitForVital(_vitalType),
-      'source': 'Home device',
-      'observed_at': DateTime.now().toIso8601String(),
-      'created_at': DateTime.now().toIso8601String(),
-    };
-    await _insert('vitals', vital);
+      'source': 'Patient app',
+      'observed_at': nowIso(),
+      'created_at': nowIso(),
+    });
 
     final alert = classifyVital(_vitalType, value);
     if (alert != null) {
       await _insert('alerts', {
         'id': newId(),
-        'patient_id': currentPatient['id'],
-        'vital_observation_id': vital['id'],
+        'patient_id': selected['id'],
+        'vital_observation_id': vitalId,
         'type': 'VitalObservation',
         'severity': alert.severity,
         'status': 'Raised',
         'message': alert.message,
-        'raised_at': DateTime.now().toIso8601String(),
-        'created_at': DateTime.now().toIso8601String(),
+        'raised_at': nowIso(),
+        'created_at': nowIso(),
       });
     }
 
     _vitalValue.clear();
+    _showSnack(
+      alert == null ? 'Reading logged.' : 'Reading logged and alert raised.',
+    );
   }
 
-  Future<void> _sendMessage() async {
-    final currentPatient = patient;
-    final text = _messageBody.text.trim();
-    if (currentPatient == null || text.isEmpty) return;
-
-    final triage = triageMessage(text);
-    await _insert('messages', {
-      'id': newId(),
-      'patient_id': currentPatient['id'],
-      'subject': triage.urgent
-          ? 'Urgent symptom report'
-          : 'Message to care team',
-      'status': triage.urgent ? 'Escalated' : 'AwaitingCareTeam',
-      'latest_message': text,
-      'priority': triage.urgent ? 'Urgent' : 'Routine',
-      'created_at': DateTime.now().toIso8601String(),
+  Future<void> _toggleTask(String id) async {
+    setState(() {
+      if (_completedTasks.contains(id)) {
+        _completedTasks.remove(id);
+      } else {
+        _completedTasks.add(id);
+      }
     });
-
-    if (triage.urgent) {
-      await _insert('alerts', {
-        'id': newId(),
-        'patient_id': currentPatient['id'],
-        'type': 'SecureMessage',
-        'severity': 'High',
-        'status': 'Routed',
-        'message': 'Urgent message sent to the care team.',
-        'raised_at': DateTime.now().toIso8601String(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    }
-
-    _messageBody.clear();
+    await _saveTasks();
   }
 
-  Future<void> _requestRefill(Map<String, dynamic> medication) async {
-    final currentPatient = patient;
-    if (currentPatient == null) return;
-
-    await _insert('messages', {
-      'id': newId(),
-      'patient_id': currentPatient['id'],
-      'subject': 'Refill request',
-      'status': 'AwaitingCareTeam',
-      'latest_message':
-          'Please review my refill for ${medication['medication_name']}.',
-      'priority': 'Routine',
-      'created_at': DateTime.now().toIso8601String(),
-    });
+  List<CarePlan> get _plans {
+    final clinicianName =
+        (_data.clinicians.firstOrNull?['full_name'] as String?) ?? 'Care team';
+    return [
+      CarePlan(
+        id: 'cardiac',
+        title: 'Cardiac Recovery Programme',
+        clinician: clinicianName,
+        progress: _planProgress(['bp', 'meds', 'walk']),
+        activities: 3,
+        accent: _mint,
+      ),
+      CarePlan(
+        id: 'diabetes',
+        title: 'Diabetes Management Plan',
+        clinician: 'Dr. Raj Patel',
+        progress: _planProgress(['glucose', 'labs']),
+        activities: 2,
+        accent: _blue,
+      ),
+    ];
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final currentPatient = patient;
-    final appointments = _forPatient(_data.appointments);
-    final meds = _forPatient(_data.prescriptions);
-    final labs = _forPatient(_data.labOrders);
-    final vitals = _forPatient(_data.vitals);
-    final alerts = _forPatient(_data.alerts);
-    final messages = _forPatient(_data.messages);
-    final careScore = max(48, 86 - alerts.length * 8);
+  List<CareTask> get _tasks {
+    return [
+      const CareTask(
+        id: 'bp',
+        title: 'Log blood pressure',
+        subtitle: 'Morning reading before coffee',
+        icon: Icons.monitor_heart_outlined,
+        accent: _mint,
+      ),
+      const CareTask(
+        id: 'meds',
+        title: 'Take Amlodipine',
+        subtitle: '5 mg once daily',
+        icon: Icons.medication_outlined,
+        accent: _blue,
+      ),
+      const CareTask(
+        id: 'walk',
+        title: '10 minute walk',
+        subtitle: 'Low intensity movement',
+        icon: Icons.directions_walk_outlined,
+        accent: _amber,
+      ),
+      const CareTask(
+        id: 'glucose',
+        title: 'Check glucose',
+        subtitle: 'Before lunch if fasting today',
+        icon: Icons.water_drop_outlined,
+        accent: _rose,
+      ),
+      const CareTask(
+        id: 'labs',
+        title: 'Review test results',
+        subtitle: 'Open latest lipid panel',
+        icon: Icons.science_outlined,
+        accent: _mint,
+      ),
+    ];
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('CareFlow'),
-        actions: [
-          Chip(
-            avatar: Icon(
-              _backendMode == 'supabase' ? Icons.cloud_done : Icons.storage,
-              size: 18,
-            ),
-            label: Text(
-              _backendMode == 'supabase' ? 'Cloud synced' : 'Offline demo',
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Reset demo records',
-            onPressed: _seedDemo,
-            icon: const Icon(Icons.refresh),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SafeArea(
-        child: currentPatient == null
-            ? Center(
-                child: FilledButton.icon(
-                  onPressed: _seedDemo,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Seed demo patient'),
-                ),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 980;
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1280),
-                        child: wide
-                            ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SizedBox(
-                                    width: 280,
-                                    child: _SidePanel(
-                                      patients: _data.patients,
-                                      selectedId: _selectedPatientId,
-                                      onSelect: (id) => setState(
-                                        () => _selectedPatientId = id,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: _MainPanel(
-                                      backendMessage: _backendMessage,
-                                      patient: currentPatient,
-                                      appointments: appointments,
-                                      medications: meds,
-                                      labs: labs,
-                                      vitals: vitals,
-                                      alerts: alerts,
-                                      messages: messages,
-                                      careScore: careScore,
-                                      appointmentReason: _appointmentReason,
-                                      appointmentDate: _appointmentDate,
-                                      onAppointmentDateChanged: (value) =>
-                                          setState(
-                                            () => _appointmentDate = value,
-                                          ),
-                                      onBookAppointment: _bookAppointment,
-                                      onAppointmentAction: _moveAppointment,
-                                      vitalType: _vitalType,
-                                      vitalValue: _vitalValue,
-                                      onVitalTypeChanged: (value) =>
-                                          setState(() => _vitalType = value),
-                                      onRecordVital: _recordVital,
-                                      messageBody: _messageBody,
-                                      onSendMessage: _sendMessage,
-                                      onRefill: _requestRefill,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Column(
-                                children: [
-                                  _SidePanel(
-                                    patients: _data.patients,
-                                    selectedId: _selectedPatientId,
-                                    onSelect: (id) =>
-                                        setState(() => _selectedPatientId = id),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _MainPanel(
-                                    backendMessage: _backendMessage,
-                                    patient: currentPatient,
-                                    appointments: appointments,
-                                    medications: meds,
-                                    labs: labs,
-                                    vitals: vitals,
-                                    alerts: alerts,
-                                    messages: messages,
-                                    careScore: careScore,
-                                    appointmentReason: _appointmentReason,
-                                    appointmentDate: _appointmentDate,
-                                    onAppointmentDateChanged: (value) =>
-                                        setState(
-                                          () => _appointmentDate = value,
-                                        ),
-                                    onBookAppointment: _bookAppointment,
-                                    onAppointmentAction: _moveAppointment,
-                                    vitalType: _vitalType,
-                                    vitalValue: _vitalValue,
-                                    onVitalTypeChanged: (value) =>
-                                        setState(() => _vitalType = value),
-                                    onRecordVital: _recordVital,
-                                    messageBody: _messageBody,
-                                    onSendMessage: _sendMessage,
-                                    onRefill: _requestRefill,
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-      ),
+  double _planProgress(List<String> taskIds) {
+    if (taskIds.isEmpty) return 0;
+    final done = taskIds.where(_completedTasks.contains).length;
+    return done / taskIds.length;
+  }
+
+  int get _pendingCount {
+    final appointmentCount = _appointments
+        .where(
+          (item) =>
+              ['Requested', 'RescheduleRequested'].contains(item['status']),
+        )
+        .length;
+    final alertCount = _alerts
+        .where((item) => item['status'] == 'Raised')
+        .length;
+    final messageCount = _messages
+        .where(
+          (item) =>
+              ['AwaitingCareTeam', 'UrgentReview'].contains(item['status']),
+        )
+        .length;
+    final labCount = _labs.where((item) => item['flag'] == 'Pending').length;
+    return appointmentCount + alertCount + messageCount + labCount;
+  }
+
+  int get _doneToday => _completedTasks.length;
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
-}
-
-class _SidePanel extends StatelessWidget {
-  const _SidePanel({
-    required this.patients,
-    required this.selectedId,
-    required this.onSelect,
-  });
-
-  final List<Map<String, dynamic>> patients;
-  final String? selectedId;
-  final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        InfoCard(
-          title: 'Family profiles',
-          subtitle: 'Switch between people you help manage.',
-          icon: Icons.group,
-          child: Column(
+    final selected = patient;
+    final content = selected == null
+        ? const Center(child: CircularProgressIndicator())
+        : IndexedStack(
+            index: _tab,
             children: [
-              for (final patient in patients) ...[
-                ListTile(
-                  selected: patient['id'] == selectedId,
-                  selectedTileColor: const Color(0xffe7f6ef),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  title: Text(patient['full_name'] as String),
-                  subtitle: Text('${patient['risk_level']} risk'),
-                  onTap: () => onSelect(patient['id'] as String),
-                ),
-                const SizedBox(height: 6),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        InfoCard(
-          title: 'Today',
-          subtitle: 'Care actions that need attention.',
-          icon: Icons.today,
-          child: const Column(
-            children: [
-              TaskTile(label: 'Medication logged', done: true),
-              TaskTile(label: 'Record blood pressure'),
-              TaskTile(label: 'Read new care message'),
-              TaskTile(label: 'Review lab result'),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MainPanel extends StatelessWidget {
-  const _MainPanel({
-    required this.backendMessage,
-    required this.patient,
-    required this.appointments,
-    required this.medications,
-    required this.labs,
-    required this.vitals,
-    required this.alerts,
-    required this.messages,
-    required this.careScore,
-    required this.appointmentReason,
-    required this.appointmentDate,
-    required this.onAppointmentDateChanged,
-    required this.onBookAppointment,
-    required this.onAppointmentAction,
-    required this.vitalType,
-    required this.vitalValue,
-    required this.onVitalTypeChanged,
-    required this.onRecordVital,
-    required this.messageBody,
-    required this.onSendMessage,
-    required this.onRefill,
-  });
-
-  final String backendMessage;
-  final Map<String, dynamic> patient;
-  final List<Map<String, dynamic>> appointments;
-  final List<Map<String, dynamic>> medications;
-  final List<Map<String, dynamic>> labs;
-  final List<Map<String, dynamic>> vitals;
-  final List<Map<String, dynamic>> alerts;
-  final List<Map<String, dynamic>> messages;
-  final int careScore;
-  final TextEditingController appointmentReason;
-  final String appointmentDate;
-  final ValueChanged<String> onAppointmentDateChanged;
-  final VoidCallback onBookAppointment;
-  final Future<void> Function(Map<String, dynamic>, String) onAppointmentAction;
-  final String vitalType;
-  final TextEditingController vitalValue;
-  final ValueChanged<String> onVitalTypeChanged;
-  final VoidCallback onRecordVital;
-  final TextEditingController messageBody;
-  final VoidCallback onSendMessage;
-  final Future<void> Function(Map<String, dynamic>) onRefill;
-
-  @override
-  Widget build(BuildContext context) {
-    final nextAppointment = appointments.firstOrNull;
-    final latestVital = vitals.firstOrNull;
-    final medication = medications.firstOrNull;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Hero(
-          patient: patient,
-          careScore: careScore,
-          backendMessage: backendMessage,
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: [
-            StatCard(
-              icon: Icons.video_call,
-              label: 'Next visit',
-              value: nextAppointment == null ? 'None' : '2 days',
-            ),
-            StatCard(
-              icon: Icons.medication,
-              label: 'Medications',
-              value: '${medications.length}',
-            ),
-            StatCard(
-              icon: Icons.notifications,
-              label: 'Open alerts',
-              value: '${alerts.length}',
-            ),
-            StatCard(
-              icon: Icons.mark_chat_unread,
-              label: 'Messages',
-              value: '${messages.length}',
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        ResponsiveGrid(
-          children: [
-            AppointmentCard(
-              appointment: nextAppointment,
-              reasonController: appointmentReason,
-              appointmentDate: appointmentDate,
-              onDateChanged: onAppointmentDateChanged,
-              onSubmit: onBookAppointment,
-              onAction: onAppointmentAction,
-            ),
-            MedicationCard(medication: medication, onRefill: onRefill),
-            ResultsCard(labs: labs),
-          ],
-        ),
-        const SizedBox(height: 16),
-        ResponsiveGrid(
-          minTileWidth: 410,
-          children: [
-            VitalsCard(
-              latestVital: latestVital,
-              alerts: alerts,
-              vitalType: vitalType,
-              valueController: vitalValue,
-              onVitalTypeChanged: onVitalTypeChanged,
-              onSubmit: onRecordVital,
-            ),
-            MessagesCard(
-              messages: messages,
-              controller: messageBody,
-              onSubmit: onSendMessage,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        const ResponsiveGrid(
-          children: [CarePlanCard(), BillingCard(), AccessCard()],
-        ),
-      ],
-    );
-  }
-}
-
-class _Hero extends StatelessWidget {
-  const _Hero({
-    required this.patient,
-    required this.careScore,
-    required this.backendMessage,
-  });
-
-  final Map<String, dynamic> patient;
-  final int careScore;
-  final String backendMessage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final image = ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                'https://images.unsplash.com/photo-1576765607924-05f89b5f7082?auto=format&fit=crop&w=900&q=80',
-                height: 230,
-                width: 300,
-                fit: BoxFit.cover,
+              _HomeTab(
+                patient: selected,
+                plans: _plans,
+                tasks: _tasks,
+                completedTasks: _completedTasks,
+                doneToday: _doneToday,
+                pendingCount: _pendingCount,
+                activePlans: _plans.length,
+                backendMode: _backendMode,
+                latestAlert: _alerts.firstOrNull,
+                onToggleTask: _toggleTask,
+                onOpenToday: () => setState(() => _tab = 2),
+                onOpenMetrics: () => setState(() => _tab = 3),
               ),
-            );
+              _PlansTab(
+                plans: _plans,
+                tasks: _tasks,
+                completedTasks: _completedTasks,
+                onToggleTask: _toggleTask,
+              ),
+              _TodayTab(
+                appointments: _appointments,
+                prescriptions: _prescriptions,
+                labs: _labs,
+                messages: _messages,
+                appointmentReason: _appointmentReason,
+                messageBody: _messageBody,
+                onRequestAppointment: _requestAppointment,
+                onAppointmentAction: _transitionAppointment,
+                onRequestRefill: _requestRefill,
+                onSendMessage: _sendMessage,
+              ),
+              _MetricsTab(
+                vitals: _vitals,
+                alerts: _alerts,
+                vitalType: _vitalType,
+                vitalValue: _vitalValue,
+                onVitalTypeChanged: (value) =>
+                    setState(() => _vitalType = value),
+                onLogVital: _logVital,
+              ),
+              _ProfileTab(
+                patient: selected,
+                patients: _data.patients,
+                backendMode: _backendMode,
+                backendMessage: _backendMessage,
+                selectedPatientId: _selectedPatientId,
+                onSwitchPatient: _switchPatient,
+                onSeedSupabase: _seedSupabase,
+              ),
+            ],
+          );
 
-            final content = Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Chip(
-                  avatar: const Icon(Icons.home, size: 18),
-                  label: const Text('Patient home'),
-                  backgroundColor: const Color(0xffdff5e8),
-                  side: BorderSide.none,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Hi ${firstName(patient['full_name'] as String)}, your care plan is on track.',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Manage appointments, medications, messages, test results, and home readings from one place.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                LinearProgressIndicator(value: careScore / 100),
-                const SizedBox(height: 8),
-                Text('Weekly care plan progress: $careScore%'),
-                const SizedBox(height: 8),
-                Text(
-                  backendMessage,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            );
-
-            if (constraints.maxWidth < 760) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [content, const SizedBox(height: 16), image],
-              );
-            }
-
-            return Row(
-              children: [
-                Expanded(child: content),
-                const SizedBox(width: 24),
-                image,
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class ResponsiveGrid extends StatelessWidget {
-  const ResponsiveGrid({
-    super.key,
-    required this.children,
-    this.minTileWidth = 320,
-  });
-
-  final List<Widget> children;
-  final double minTileWidth;
-
-  @override
-  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = max(1, constraints.maxWidth ~/ minTileWidth);
-        final width = (constraints.maxWidth - (columns - 1) * 16) / columns;
+        final useFrame = constraints.maxWidth > 640;
+        final app = ClipRRect(
+          borderRadius: BorderRadius.circular(useFrame ? 28 : 0),
+          child: Scaffold(
+            body: SafeArea(child: content),
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _tab,
+              height: 72,
+              backgroundColor: _surface,
+              indicatorColor: _mint.withValues(alpha: 0.18),
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              onDestinationSelected: (value) => setState(() => _tab = value),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.assignment_outlined),
+                  selectedIcon: Icon(Icons.assignment),
+                  label: 'Plans',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.calendar_month_outlined),
+                  selectedIcon: Icon(Icons.calendar_month),
+                  label: 'Today',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.show_chart_outlined),
+                  selectedIcon: Icon(Icons.show_chart),
+                  label: 'Metrics',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
+            ),
+          ),
+        );
 
-        return Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: [
-            for (final child in children) SizedBox(width: width, child: child),
-          ],
+        if (!useFrame) return app;
+        return ColoredBox(
+          color: const Color(0xff080a09),
+          child: Center(
+            child: Container(
+              width: 430,
+              height: min(constraints.maxHeight - 32, 920),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: const Color(0xff343c39), width: 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black54,
+                    blurRadius: 32,
+                    offset: Offset(0, 18),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: app,
+            ),
+          ),
         );
       },
     );
   }
 }
 
-class InfoCard extends StatelessWidget {
-  const InfoCard({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.child,
+class _HomeTab extends StatelessWidget {
+  const _HomeTab({
+    required this.patient,
+    required this.plans,
+    required this.tasks,
+    required this.completedTasks,
+    required this.doneToday,
+    required this.pendingCount,
+    required this.activePlans,
+    required this.backendMode,
+    required this.latestAlert,
+    required this.onToggleTask,
+    required this.onOpenToday,
+    required this.onOpenMetrics,
   });
 
+  final Map<String, dynamic> patient;
+  final List<CarePlan> plans;
+  final List<CareTask> tasks;
+  final Set<String> completedTasks;
+  final int doneToday;
+  final int pendingCount;
+  final int activePlans;
+  final String backendMode;
+  final Map<String, dynamic>? latestAlert;
+  final ValueChanged<String> onToggleTask;
+  final VoidCallback onOpenToday;
+  final VoidCallback onOpenMetrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = patient['full_name'] as String;
+    final first = firstName(name);
+    final nextTasks = tasks
+        .where((task) => !completedTasks.contains(task.id))
+        .take(3);
+
+    return _Screen(
+      children: [
+        const SizedBox(height: 10),
+        const Center(
+          child: Text(
+            'HealthPath',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(height: 30),
+        Row(
+          children: [
+            _Avatar(name: name),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _greeting(),
+                    style: const TextStyle(color: _muted, fontSize: 16),
+                  ),
+                  Text(
+                    first,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _Pill(
+              label: backendMode == 'supabase' ? 'Live' : 'Local',
+              icon: backendMode == 'supabase'
+                  ? Icons.cloud_done
+                  : Icons.cloud_off,
+              color: backendMode == 'supabase' ? _mint : _amber,
+            ),
+          ],
+        ),
+        const SizedBox(height: 30),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                icon: Icons.assignment_turned_in_outlined,
+                value: '$activePlans',
+                label: 'Active Plans',
+                color: _mint,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCard(
+                icon: Icons.check_circle_outline,
+                value: '$doneToday',
+                label: 'Done Today',
+                color: _blue,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCard(
+                icon: Icons.pending_actions_outlined,
+                value: '$pendingCount',
+                label: 'Pending',
+                color: _amber,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        _SectionHeader(
+          title: 'Active Care Plans',
+          action: 'Today',
+          onTap: onOpenToday,
+        ),
+        const SizedBox(height: 12),
+        for (final plan in plans) ...[
+          _PlanCard(plan: plan),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 8),
+        const _SectionHeader(title: "Today's Highlights"),
+        const SizedBox(height: 12),
+        if (latestAlert != null)
+          _InsightCard(
+            title: latestAlert!['message'] as String,
+            detail: 'Your care team can see new high-priority alerts.',
+            icon: Icons.notifications_active_outlined,
+            color: _rose,
+          )
+        else
+          const _InsightCard(
+            title: 'No active clinical alerts',
+            detail: 'Keep following your plan and logging readings.',
+            icon: Icons.favorite_border,
+            color: _mint,
+          ),
+        const SizedBox(height: 12),
+        for (final task in nextTasks)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _TaskTile(
+              task: task,
+              done: completedTasks.contains(task.id),
+              onTap: () => onToggleTask(task.id),
+            ),
+          ),
+        const SizedBox(height: 8),
+        _ImageFeatureCard(onOpenMetrics: onOpenMetrics),
+      ],
+    );
+  }
+}
+
+class _PlansTab extends StatelessWidget {
+  const _PlansTab({
+    required this.plans,
+    required this.tasks,
+    required this.completedTasks,
+    required this.onToggleTask,
+  });
+
+  final List<CarePlan> plans;
+  final List<CareTask> tasks;
+  final Set<String> completedTasks;
+  final ValueChanged<String> onToggleTask;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Screen(
+      title: 'Care Plans',
+      subtitle: 'Your daily actions and progress are tracked here.',
+      children: [
+        for (final plan in plans) ...[
+          _PlanCard(plan: plan),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 16),
+        const _SectionHeader(title: 'Plan Tasks'),
+        const SizedBox(height: 12),
+        for (final task in tasks)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _TaskTile(
+              task: task,
+              done: completedTasks.contains(task.id),
+              onTap: () => onToggleTask(task.id),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TodayTab extends StatelessWidget {
+  const _TodayTab({
+    required this.appointments,
+    required this.prescriptions,
+    required this.labs,
+    required this.messages,
+    required this.appointmentReason,
+    required this.messageBody,
+    required this.onRequestAppointment,
+    required this.onAppointmentAction,
+    required this.onRequestRefill,
+    required this.onSendMessage,
+  });
+
+  final List<Map<String, dynamic>> appointments;
+  final List<Map<String, dynamic>> prescriptions;
+  final List<Map<String, dynamic>> labs;
+  final List<Map<String, dynamic>> messages;
+  final TextEditingController appointmentReason;
+  final TextEditingController messageBody;
+  final Future<void> Function() onRequestAppointment;
+  final Future<void> Function(Map<String, dynamic>, String) onAppointmentAction;
+  final Future<void> Function(Map<String, dynamic>) onRequestRefill;
+  final Future<void> Function() onSendMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final latestPrescription = prescriptions.firstOrNull;
+
+    return _Screen(
+      title: 'Today',
+      subtitle: 'Appointments, refills, results, and messages.',
+      children: [
+        _Panel(
+          title: 'Book care',
+          icon: Icons.video_call_outlined,
+          child: Column(
+            children: [
+              TextField(
+                controller: appointmentReason,
+                minLines: 1,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'What do you need help with?',
+                  hintText: 'Blood pressure review',
+                ),
+              ),
+              const SizedBox(height: 10),
+              _PrimaryButton(
+                label: 'Request video appointment',
+                onPressed: onRequestAppointment,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        const _SectionHeader(title: 'Upcoming'),
+        const SizedBox(height: 10),
+        if (appointments.isEmpty)
+          const _EmptyCard(message: 'No appointments yet.')
+        else
+          for (final appointment in appointments.take(3))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _AppointmentTile(
+                appointment: appointment,
+                onAction: (action) => onAppointmentAction(appointment, action),
+              ),
+            ),
+        const SizedBox(height: 12),
+        _Panel(
+          title: 'Medication',
+          icon: Icons.medication_outlined,
+          child: latestPrescription == null
+              ? const _MutedText('No medications recorded.')
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${latestPrescription['medication_name']} ${latestPrescription['dose']}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${latestPrescription['frequency']} · ${latestPrescription['status']}',
+                      style: const TextStyle(color: _muted),
+                    ),
+                    const SizedBox(height: 12),
+                    _SecondaryButton(
+                      label: 'Request refill',
+                      icon: Icons.refresh,
+                      onPressed: () => onRequestRefill(latestPrescription),
+                    ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 14),
+        _Panel(
+          title: 'Test results',
+          icon: Icons.science_outlined,
+          child: labs.isEmpty
+              ? const _MutedText('No lab orders yet.')
+              : Column(
+                  children: [
+                    for (final lab in labs.take(3))
+                      _MiniRow(
+                        title: lab['test_name'] as String,
+                        detail: '${lab['status']} · ${lab['flag']}',
+                        color: lab['flag'] == 'Normal' ? _mint : _amber,
+                      ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 14),
+        _Panel(
+          title: 'Secure message',
+          icon: Icons.chat_bubble_outline,
+          child: Column(
+            children: [
+              TextField(
+                controller: messageBody,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: 'Message your care team',
+                  hintText: 'Ask a non-urgent medical question',
+                ),
+              ),
+              const SizedBox(height: 10),
+              _PrimaryButton(
+                label: 'Send and triage',
+                onPressed: onSendMessage,
+              ),
+              const SizedBox(height: 12),
+              for (final message in messages.take(2))
+                _MiniRow(
+                  title: message['subject'] as String,
+                  detail: '${message['status']} · ${message['priority']}',
+                  color: message['priority'] == 'Urgent' ? _rose : _mint,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MetricsTab extends StatelessWidget {
+  const _MetricsTab({
+    required this.vitals,
+    required this.alerts,
+    required this.vitalType,
+    required this.vitalValue,
+    required this.onVitalTypeChanged,
+    required this.onLogVital,
+  });
+
+  final List<Map<String, dynamic>> vitals;
+  final List<Map<String, dynamic>> alerts;
+  final String vitalType;
+  final TextEditingController vitalValue;
+  final ValueChanged<String> onVitalTypeChanged;
+  final Future<void> Function() onLogVital;
+
+  @override
+  Widget build(BuildContext context) {
+    final latest = vitals.firstOrNull;
+
+    return _Screen(
+      title: 'Metrics',
+      subtitle: 'Log readings and spot changes earlier.',
+      children: [
+        _Panel(
+          title: 'Add reading',
+          icon: Icons.add_chart_outlined,
+          child: Column(
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: vitalType,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Blood pressure systolic',
+                    child: Text('Blood pressure systolic'),
+                  ),
+                  DropdownMenuItem(value: 'Glucose', child: Text('Glucose')),
+                  DropdownMenuItem(
+                    value: 'Heart rate',
+                    child: Text('Heart rate'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) onVitalTypeChanged(value);
+                },
+                decoration: const InputDecoration(labelText: 'Reading type'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: vitalValue,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Value',
+                  suffixText: unitForVital(vitalType),
+                ),
+              ),
+              const SizedBox(height: 10),
+              _PrimaryButton(label: 'Log reading', onPressed: onLogVital),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (latest != null)
+          _Panel(
+            title: 'Latest reading',
+            icon: Icons.monitor_heart_outlined,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${latest['value']} ${latest['unit']}',
+                  style: const TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${latest['type']} · ${formatDate(latest['observed_at'] as String?)}',
+                  style: const TextStyle(color: _muted),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 14),
+        const _SectionHeader(title: 'Clinical alerts'),
+        const SizedBox(height: 10),
+        if (alerts.isEmpty)
+          const _EmptyCard(message: 'No alerts raised.')
+        else
+          for (final alert in alerts.take(5))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _AlertTile(alert: alert),
+            ),
+      ],
+    );
+  }
+}
+
+class _ProfileTab extends StatelessWidget {
+  const _ProfileTab({
+    required this.patient,
+    required this.patients,
+    required this.backendMode,
+    required this.backendMessage,
+    required this.selectedPatientId,
+    required this.onSwitchPatient,
+    required this.onSeedSupabase,
+  });
+
+  final Map<String, dynamic> patient;
+  final List<Map<String, dynamic>> patients;
+  final String backendMode;
+  final String backendMessage;
+  final String? selectedPatientId;
+  final ValueChanged<String> onSwitchPatient;
+  final Future<void> Function() onSeedSupabase;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Screen(
+      title: 'Profile',
+      subtitle: 'Family access, demo data, and model traceability.',
+      children: [
+        _Panel(
+          title: 'Patient account',
+          icon: Icons.verified_user_outlined,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _Avatar(name: patient['full_name'] as String, size: 54),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          patient['full_name'] as String,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          '${patient['risk_level']} risk · ${patient['preferred_language']}',
+                          style: const TextStyle(color: _muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                patient['care_goal'] as String,
+                style: const TextStyle(height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _Panel(
+          title: 'Family profiles',
+          icon: Icons.family_restroom_outlined,
+          child: Column(
+            children: [
+              for (final item in patients)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ProfileSwitchTile(
+                    patient: item,
+                    selected: item['id'] == selectedPatientId,
+                    onTap: () => onSwitchPatient(item['id'] as String),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _Panel(
+          title: 'Backend status',
+          icon: backendMode == 'supabase'
+              ? Icons.cloud_done_outlined
+              : Icons.cloud_off_outlined,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Pill(
+                label: backendMode == 'supabase'
+                    ? 'Supabase connected'
+                    : 'Offline demo',
+                icon: backendMode == 'supabase' ? Icons.check : Icons.storage,
+                color: backendMode == 'supabase' ? _mint : _amber,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                backendMessage,
+                style: const TextStyle(color: _muted, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              _SecondaryButton(
+                label: 'Seed demo data',
+                icon: Icons.dataset_outlined,
+                onPressed: onSeedSupabase,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        const _Panel(
+          title: 'Model trace',
+          icon: Icons.account_tree_outlined,
+          child: Column(
+            children: [
+              _MiniRow(
+                title: 'Class model',
+                detail: 'Patients, clinicians, appointments, prescriptions',
+                color: _mint,
+              ),
+              _MiniRow(
+                title: 'State models',
+                detail: 'Appointments, alerts, messages, refill requests',
+                color: _blue,
+              ),
+              _MiniRow(
+                title: 'ER model',
+                detail: 'Supabase tables mirror the domain model',
+                color: _amber,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Screen extends StatelessWidget {
+  const _Screen({this.title, this.subtitle, required this.children});
+
+  final String? title;
+  final String? subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+      children: [
+        if (title != null) ...[
+          Text(
+            title!,
+            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              subtitle!,
+              style: const TextStyle(color: _muted, height: 1.35),
+            ),
+          ],
+          const SizedBox(height: 22),
+        ],
+        ...children,
+      ],
+    );
+  }
+}
+
+class _Panel extends StatelessWidget {
+  const _Panel({required this.title, required this.icon, required this.child});
+
   final String title;
-  final String subtitle;
   final IconData icon;
   final Widget child;
 
@@ -773,30 +1241,24 @@ class InfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 8),
+                Icon(icon, color: _mint),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    style: const TextStyle(
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
             ),
             const SizedBox(height: 16),
             child,
@@ -807,41 +1269,191 @@ class InfoCard extends StatelessWidget {
   }
 }
 
-class StatCard extends StatelessWidget {
-  const StatCard({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.name, this.size = 74});
 
-  final IconData icon;
-  final String label;
-  final String value;
+  final String name;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 190,
+    final initials = name
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part.characters.first)
+        .join()
+        .toUpperCase();
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: _mint,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: _ink,
+          fontSize: size * 0.34,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 18),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanCard extends StatelessWidget {
+  const _PlanCard({required this.plan});
+
+  final CarePlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (plan.progress * 100).round();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    plan.title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                _Pill(
+                  label: 'Active',
+                  icon: Icons.play_circle_outline,
+                  color: plan.accent,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(plan.clinician, style: const TextStyle(color: _muted)),
+            const SizedBox(height: 18),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: plan.progress.clamp(0, 1),
+                minHeight: 8,
+                backgroundColor: _line,
+                color: plan.accent,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '$percent% complete · ${plan.activities} activities',
+              style: const TextStyle(color: _muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TaskTile extends StatelessWidget {
+  const _TaskTile({
+    required this.task,
+    required this.done,
+    required this.onTap,
+  });
+
+  final CareTask task;
+  final bool done;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Icon(icon, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(height: 14),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: task.accent.withValues(alpha: 0.14),
+                ),
+                child: Icon(task.icon, color: task.accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(task.subtitle, style: const TextStyle(color: _muted)),
+                  ],
                 ),
               ),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              Icon(
+                done ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: done ? _mint : _muted,
               ),
             ],
           ),
@@ -851,554 +1463,479 @@ class StatCard extends StatelessWidget {
   }
 }
 
-class AppointmentCard extends StatelessWidget {
-  const AppointmentCard({
-    super.key,
-    required this.appointment,
-    required this.reasonController,
-    required this.appointmentDate,
-    required this.onDateChanged,
-    required this.onSubmit,
-    required this.onAction,
-  });
+class _AppointmentTile extends StatelessWidget {
+  const _AppointmentTile({required this.appointment, required this.onAction});
 
-  final Map<String, dynamic>? appointment;
-  final TextEditingController reasonController;
-  final String appointmentDate;
-  final ValueChanged<String> onDateChanged;
-  final VoidCallback onSubmit;
-  final Future<void> Function(Map<String, dynamic>, String) onAction;
+  final Map<String, dynamic> appointment;
+  final ValueChanged<String> onAction;
 
   @override
   Widget build(BuildContext context) {
-    return InfoCard(
-      title: 'Next appointment',
-      subtitle: 'Book and manage upcoming care.',
-      icon: Icons.video_call,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (appointment == null)
-            const EmptyState(text: 'No appointment booked.')
-          else
-            RecordTile(
-              title: appointment!['reason'] as String,
-              subtitle: formatDate(appointment!['scheduled_start'] as String?),
-              badge: appointment!['status'] as String,
-              actions: [
-                for (final action in appointmentActions(
-                  appointment!['status'] as String? ?? '',
-                ))
-                  TextButton(
-                    onPressed: () => onAction(appointment!, action.$1),
-                    child: Text(action.$2),
+    final actions = appointmentActions(appointment['status'] as String);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    appointment['reason'] as String,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
+                ),
+                _Pill(
+                  label: appointment['status'] as String,
+                  icon: Icons.circle,
+                  color: _mint,
+                ),
               ],
             ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: reasonController,
-            decoration: const InputDecoration(labelText: 'Visit reason'),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Preferred date',
-              helperText: 'YYYY-MM-DD, defaults to two days from now',
+            const SizedBox(height: 6),
+            Text(
+              '${appointment['type']} · ${formatDate(appointment['scheduled_start'] as String?)}',
+              style: const TextStyle(color: _muted),
             ),
-            onChanged: onDateChanged,
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: onSubmit,
-            icon: const Icon(Icons.add),
-            label: const Text('Request visit'),
-          ),
-        ],
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final action in actions)
+                    _SmallButton(
+                      label: action.$2,
+                      onPressed: () => onAction(action.$1),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class MedicationCard extends StatelessWidget {
-  const MedicationCard({
-    super.key,
-    required this.medication,
-    required this.onRefill,
-  });
+class _AlertTile extends StatelessWidget {
+  const _AlertTile({required this.alert});
 
-  final Map<String, dynamic>? medication;
-  final Future<void> Function(Map<String, dynamic>) onRefill;
+  final Map<String, dynamic> alert;
 
   @override
   Widget build(BuildContext context) {
-    return InfoCard(
-      title: 'Medications',
-      subtitle: 'Track doses and request refills.',
-      icon: Icons.medication,
-      child: medication == null
-          ? const EmptyState(text: 'No active medication.')
-          : RecordTile(
-              title: '${medication!['medication_name']} ${medication!['dose']}',
-              subtitle:
-                  '${medication!['frequency']} · ${medication!['repeats']} refills left',
-              badge: 'Active',
-              actions: [
-                OutlinedButton.icon(
-                  onPressed: () => onRefill(medication!),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Request refill'),
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-class ResultsCard extends StatelessWidget {
-  const ResultsCard({super.key, required this.labs});
-
-  final List<Map<String, dynamic>> labs;
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoCard(
-      title: 'Test results',
-      subtitle: 'View results and follow-up status.',
-      icon: Icons.science,
-      child: labs.isEmpty
-          ? const EmptyState(text: 'No test results yet.')
-          : Column(
-              children: [
-                for (final lab in labs.take(3)) ...[
-                  RecordTile(
-                    title: lab['test_name'] as String,
-                    subtitle:
-                        '${lab['status']} · ${formatDate(lab['ordered_at'] as String?)}',
-                    badge: lab['flag'] as String,
+    final severity = alert['severity'] as String;
+    final color = severity == 'Critical' ? _rose : _amber;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    alert['message'] as String,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$severity · ${alert['status']}',
+                    style: const TextStyle(color: _muted),
+                  ),
                 ],
-              ],
+              ),
             ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class VitalsCard extends StatelessWidget {
-  const VitalsCard({
-    super.key,
-    required this.latestVital,
-    required this.alerts,
-    required this.vitalType,
-    required this.valueController,
-    required this.onVitalTypeChanged,
-    required this.onSubmit,
-  });
+class _ImageFeatureCard extends StatelessWidget {
+  const _ImageFeatureCard({required this.onOpenMetrics});
 
-  final Map<String, dynamic>? latestVital;
-  final List<Map<String, dynamic>> alerts;
-  final String vitalType;
-  final TextEditingController valueController;
-  final ValueChanged<String> onVitalTypeChanged;
-  final VoidCallback onSubmit;
+  final VoidCallback onOpenMetrics;
 
   @override
   Widget build(BuildContext context) {
-    return InfoCard(
-      title: 'Home health tracking',
-      subtitle: 'Log readings from home devices and receive guidance.',
-      icon: Icons.monitor_heart,
+    return Card(
+      clipBehavior: Clip.antiAlias,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: const Color(0xffeef7f1),
+          AspectRatio(
+            aspectRatio: 16 / 7,
+            child: Image.network(
+              'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=900&q=80',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: _surfaceHigh,
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.health_and_safety_outlined,
+                  color: _mint,
+                  size: 44,
+                ),
+              ),
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Latest reading'),
-                const SizedBox(height: 6),
-                Text(
-                  latestVital == null
-                      ? 'No reading'
-                      : '${latestVital!['value']} ${latestVital!['unit']}',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                const Text(
+                  'Connected care at home',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                 ),
-                Text(
-                  latestVital == null
-                      ? 'Record a vital to begin.'
-                      : latestVital!['type'] as String,
+                const SizedBox(height: 8),
+                const Text(
+                  'Log readings, follow plans, and keep your care team in the loop.',
+                  style: TextStyle(color: _muted, height: 1.35),
+                ),
+                const SizedBox(height: 14),
+                _SecondaryButton(
+                  label: 'Open metrics',
+                  icon: Icons.show_chart,
+                  onPressed: onOpenMetrics,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: vitalType,
-            decoration: const InputDecoration(labelText: 'Reading type'),
-            items: const [
-              DropdownMenuItem(
-                value: 'Blood pressure systolic',
-                child: Text('Blood pressure systolic'),
-              ),
-              DropdownMenuItem(value: 'Glucose', child: Text('Glucose')),
-              DropdownMenuItem(value: 'Heart rate', child: Text('Heart rate')),
-            ],
-            onChanged: (value) {
-              if (value != null) onVitalTypeChanged(value);
-            },
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: valueController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Value (${unitForVital(vitalType)})',
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: onSubmit, child: const Text('Save reading')),
-          const SizedBox(height: 12),
-          for (final alert in alerts.take(2))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: RecordTile(
-                title: alert['message'] as String,
-                subtitle: alert['status'] as String? ?? 'Raised',
-                badge: alert['severity'] as String? ?? 'Alert',
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-class MessagesCard extends StatelessWidget {
-  const MessagesCard({
-    super.key,
-    required this.messages,
-    required this.controller,
-    required this.onSubmit,
-  });
-
-  final List<Map<String, dynamic>> messages;
-  final TextEditingController controller;
-  final VoidCallback onSubmit;
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoCard(
-      title: 'Messages',
-      subtitle: 'Ask a question or report symptoms.',
-      icon: Icons.chat_bubble_outline,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: controller,
-            minLines: 3,
-            maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: 'Patient message',
-              hintText: 'Try: I have chest pain and shortness of breath',
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: onSubmit,
-            child: const Text('Send to care team'),
-          ),
-          const SizedBox(height: 14),
-          for (final message in messages.take(3))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: RecordTile(
-                title: message['subject'] as String,
-                subtitle: message['latest_message'] as String,
-                badge: message['status'] as String,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class CarePlanCard extends StatelessWidget {
-  const CarePlanCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const InfoCard(
-      title: 'Care plan',
-      subtitle: 'Daily actions from your care team.',
-      icon: Icons.checklist,
-      child: Column(
-        children: [
-          TaskTile(label: 'Take morning medication', done: true),
-          TaskTile(label: 'Record blood pressure before dinner'),
-          TaskTile(label: 'Read low-sodium meal guide'),
-          TaskTile(label: 'Complete weekly check-in'),
-        ],
-      ),
-    );
-  }
-}
-
-class BillingCard extends StatelessWidget {
-  const BillingCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoCard(
-      title: 'Billing',
-      subtitle: 'Estimate costs and view balances.',
-      icon: Icons.credit_card,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Current balance',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '\$0.00',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          const Text('No payment is due.'),
-          const SizedBox(height: 12),
-          OutlinedButton(onPressed: () {}, child: const Text('View estimates')),
-        ],
-      ),
-    );
-  }
-}
-
-class AccessCard extends StatelessWidget {
-  const AccessCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const InfoCard(
-      title: 'Care access',
-      subtitle: 'Quick paths for routine and urgent care.',
-      icon: Icons.local_hospital,
-      child: Column(
-        children: [
-          QuickLink(
-            icon: Icons.video_call,
-            title: 'Start virtual care',
-            text: 'Join a video visit or request advice.',
-          ),
-          QuickLink(
-            icon: Icons.place,
-            title: 'Nearby services',
-            text: 'Find labs, pharmacies, and urgent care.',
-          ),
-          QuickLink(
-            icon: Icons.verified_user,
-            title: 'Record sharing',
-            text: 'Share your summary with another provider.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class QuickLink extends StatelessWidget {
-  const QuickLink({
-    super.key,
-    required this.icon,
+class _InsightCard extends StatelessWidget {
+  const _InsightCard({
     required this.title,
-    required this.text,
+    required this.detail,
+    required this.icon,
+    required this.color,
   });
 
-  final IconData icon;
   final String title;
-  final String text;
+  final String detail;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(detail, style: const TextStyle(color: _muted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileSwitchTile extends StatelessWidget {
+  const _ProfileSwitchTile({
+    required this.patient,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Map<String, dynamic> patient;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: selected ? _mint.withValues(alpha: 0.12) : _surfaceHigh,
+          border: Border.all(color: selected ? _mint : _line),
+        ),
+        child: Row(
+          children: [
+            _Avatar(name: patient['full_name'] as String, size: 42),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    patient['full_name'] as String,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  Text(
+                    '${patient['risk_level']} risk',
+                    style: const TextStyle(color: _muted),
+                  ),
+                ],
+              ),
+            ),
+            if (selected) const Icon(Icons.check_circle, color: _mint),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniRow extends StatelessWidget {
+  const _MiniRow({
+    required this.title,
+    required this.detail,
+    required this.color,
+  });
+
+  final String title;
+  final String detail;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 10),
+          Container(
+            width: 8,
+            height: 38,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  text,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class RecordTile extends StatelessWidget {
-  const RecordTile({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.badge,
-    this.actions = const [],
-  });
-
-  final String title;
-  final String subtitle;
-  final String badge;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xffd5e4dc)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
                   title,
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-              ),
-              StatusChip(label: badge),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                const SizedBox(height: 4),
+                Text(detail, style: const TextStyle(color: _muted)),
+              ],
             ),
           ),
-          if (actions.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(spacing: 8, runSpacing: 8, children: actions),
-          ],
         ],
       ),
     );
   }
 }
 
-class StatusChip extends StatelessWidget {
-  const StatusChip({super.key, required this.label});
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, this.action, this.onTap});
 
-  final String label;
+  final String title;
+  final String? action;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final normalized = label.toLowerCase();
-    final color = normalized.contains('high') || normalized.contains('critical')
-        ? const Color(0xffba1a1a)
-        : normalized.contains('pending') || normalized.contains('requested')
-        ? const Color(0xffffdf8a)
-        : const Color(0xffdff5e8);
-    final textColor =
-        normalized.contains('high') || normalized.contains('critical')
-        ? Colors.white
-        : const Color(0xff143f34);
-
-    return Chip(
-      label: Text(label),
-      backgroundColor: color,
-      labelStyle: TextStyle(color: textColor, fontWeight: FontWeight.w700),
-      side: BorderSide.none,
-      visualDensity: VisualDensity.compact,
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+        ),
+        if (action != null) TextButton(onPressed: onTap, child: Text(action!)),
+      ],
     );
   }
 }
 
-class EmptyState extends StatelessWidget {
-  const EmptyState({super.key, required this.text});
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, required this.icon, required this.color});
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: color.withValues(alpha: 0.12),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({required this.label, required this.onPressed});
+
+  final String label;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        style: FilledButton.styleFrom(
+          backgroundColor: _mint,
+          foregroundColor: _ink,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+        onPressed: () => onPressed(),
+        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ),
+    );
+  }
+}
+
+class _SecondaryButton extends StatelessWidget {
+  const _SecondaryButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: _mint,
+        side: const BorderSide(color: _mint),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+    );
+  }
+}
+
+class _SmallButton extends StatelessWidget {
+  const _SmallButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      style: FilledButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      onPressed: onPressed,
+      child: Text(label),
+    );
+  }
+}
+
+class _MutedText extends StatelessWidget {
+  const _MutedText(this.text);
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xffd5e4dc)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+    return Text(text, style: const TextStyle(color: _muted));
+  }
+}
+
+class _EmptyCard extends StatelessWidget {
+  const _EmptyCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Text(message, style: const TextStyle(color: _muted)),
       ),
     );
   }
 }
 
-class TaskTile extends StatelessWidget {
-  const TaskTile({super.key, required this.label, this.done = false});
+class CarePlan {
+  const CarePlan({
+    required this.id,
+    required this.title,
+    required this.clinician,
+    required this.progress,
+    required this.activities,
+    required this.accent,
+  });
 
-  final String label;
-  final bool done;
+  final String id;
+  final String title;
+  final String clinician;
+  final double progress;
+  final int activities;
+  final Color accent;
+}
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(
-            done ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: done ? Theme.of(context).colorScheme.primary : Colors.grey,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                decoration: done
-                    ? TextDecoration.lineThrough
-                    : TextDecoration.none,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+class CareTask {
+  const CareTask({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color accent;
 }
 
 class LoadResult {
@@ -1414,7 +1951,7 @@ class LoadResult {
 }
 
 class CareStore {
-  static const _offlineKey = 'careflow.flutter.offline.v1';
+  static const _offlineKey = 'healthpath.flutter.offline.v2';
 
   final _client = Supabase.instance.client;
 
@@ -1552,11 +2089,11 @@ class AppData {
       patients: [
         {
           'id': patientId,
-          'full_name': 'Maya Chen',
+          'full_name': 'Alex Johnson',
           'date_of_birth': '1988-09-14',
           'preferred_language': 'English',
           'risk_level': 'Moderate',
-          'care_goal': 'Reduce blood pressure and improve medication adherence',
+          'care_goal': 'Reduce blood pressure and rebuild daily activity.',
           'created_at': nowIso(),
         },
         {
@@ -1565,15 +2102,15 @@ class AppData {
           'date_of_birth': '1975-02-03',
           'preferred_language': 'English',
           'risk_level': 'High',
-          'care_goal': 'Monitor glucose and follow up on abnormal lab results',
+          'care_goal': 'Monitor glucose and follow up on abnormal lab results.',
           'created_at': nowIso(),
         },
       ],
       clinicians: [
         {
           'id': clinicianId,
-          'full_name': 'Dr. Amelia Hart',
-          'specialty': 'General Practice',
+          'full_name': 'Dr. Sarah Evans',
+          'specialty': 'Primary Care',
           'accepting_appointments': true,
           'created_at': nowIso(),
         },
@@ -1754,8 +2291,12 @@ class AppData {
 
     return copyWith(
       appointments: key == 'appointments' ? update(appointments) : null,
+      prescriptions: key == 'prescriptions' ? update(prescriptions) : null,
+      labOrders: key == 'labOrders' ? update(labOrders) : null,
+      vitals: key == 'vitals' ? update(vitals) : null,
       alerts: key == 'alerts' ? update(alerts) : null,
       messages: key == 'messages' ? update(messages) : null,
+      auditEvents: key == 'auditEvents' ? update(auditEvents) : null,
     );
   }
 
@@ -1885,6 +2426,13 @@ String formatDate(String? value) {
   return DateFormat(
     'd MMM yyyy, h:mm a',
   ).format(DateTime.parse(value).toLocal());
+}
+
+String _greeting() {
+  final hour = DateTime.now().hour;
+  if (hour < 12) return 'Good morning,';
+  if (hour < 18) return 'Good afternoon,';
+  return 'Good evening,';
 }
 
 String newId() {
